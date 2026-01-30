@@ -18,11 +18,7 @@ from animalid import AnimalIdGenerator
 # --- 初始化 ---
 
 # 1. 初始化 MCP 服务器
-mcp = FastMCP(
-    "mathematica",
-    title="Wolfram Mathematica Server",
-    description="Provides tools to interact with a Wolfram Mathematica kernel.",
-)
+mcp = FastMCP("mathematica")
 
 # 2. 从环境变量加载密钥并初始化 AnimalID 生成器
 #    请设置 'ANIMALID_SECRET_KEY' 环境变量以确保安全
@@ -86,6 +82,7 @@ KERNEL_PATH = find_wolfram_kernel()
 
 # --- 工具定义 ---
 
+
 @mcp.tool()
 def create_mathematica_session() -> str:
     """
@@ -143,14 +140,18 @@ async def execute_mathematica_code(session_id: str, code: str) -> Any:
     # 查找会话
     session = sessions.get(session_id)
     if not session:
-        raise ValueError(f"Session with ID '{session_id}' not found or has been closed.")
+        raise ValueError(
+            f"Session with ID '{session_id}' not found or has been closed."
+        )
 
     try:
         # 将字符串代码转换为 wlexpr 对象并执行
         result = session.evaluate(wlexpr(code))
         return result
     except Exception as e:
-        raise RuntimeError(f"An error occurred during execution in session '{session_id}': {e}") from e
+        raise RuntimeError(
+            f"An error occurred during execution in session '{session_id}': {e}"
+        ) from e
 
 
 @mcp.tool()
@@ -184,7 +185,9 @@ def close_mathematica_session(session_id: str) -> str:
         del sessions[session_id]
         return f"Session '{session_id}' closed successfully."
     except Exception as e:
-        raise RuntimeError(f"An error occurred while closing session '{session_id}': {e}") from e
+        raise RuntimeError(
+            f"An error occurred while closing session '{session_id}': {e}"
+        ) from e
 
 
 # --- 运行服务器 ---
