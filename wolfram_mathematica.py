@@ -6,8 +6,7 @@
 # ]
 # ///
 import os
-import platform
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
 from wolframclient.evaluation import WolframLanguageSession
@@ -34,50 +33,37 @@ id_generator = AnimalIdGenerator(secret_key=secret_key)
 sessions: Dict[str, WolframLanguageSession] = {}
 
 
-# --- Helper Function to find Wolfram Kernel ---
-def find_wolfram_kernel() -> str | None:
+# --- Kernel Path Handling (NO auto-search) ---
+
+
+def get_kernel_path_from_env() -> Optional[str]:
     """
-    Automatically detects the path to the Wolfram Kernel based on the OS.
-    It checks a list of common installation directories.
+    If WOLFRAM_KERNEL_PATH is set, use it.
+    If it is set but invalid, raise a clear error.
+    If it is not set, return None (wolframclient will attempt its own autodetection).
     """
-    system = platform.system()
-    potential_paths = []
+    raw = os.getenv("WOLFRAM_KERNEL_PATH", "").strip()
+    if not raw:
+        return None
 
-    if system == "Darwin":  # macOS
-        potential_paths = [
-            "/Applications/Wolfram.app/Contents/MacOS/WolframKernel",
-            "/Applications/Mathematica.app/Contents/MacOS/WolframKernel",
-            "/Applications/Wolfram Engine.app/Contents/MacOS/WolframKernel",
-        ]
-    elif system == "Windows":
-        program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
-        for version in ["14.0", "13.3", "13.2", "13.1", "13.0"]:
-            potential_paths.append(
-                os.path.join(
-                    program_files,
-                    f"Wolfram Research\\Mathematica\\{version}\\WolframKernel.exe",
-                )
-            )
-    elif system == "Linux":
-        for version in ["14.0", "13.3", "13.2", "13.1", "13.0"]:
-            potential_paths.append(
-                f"/usr/local/Wolfram/Mathematica/{version}/Executables/WolframKernel"
-            )
+    # Expand ~ and env vars
+    path = os.path.expandvars(os.path.expanduser(raw))
 
-    for path in potential_paths:
-        if os.path.exists(path):
-            print(f"Found Wolfram Kernel at: {path}")
-            return path
+    if not os.path.exists(path):
+        raise RuntimeError(f"WOLFRAM_KERNEL_PATH was set but does not exist: '{path}'")
+    if not os.path.isfile(path):
+        raise RuntimeError(f"WOLFRAM_KERNEL_PATH was set but is not a file: '{path}'")
+    if not os.access(path, os.X_OK):
+        raise RuntimeError(
+            f"WOLFRAM_KERNEL_PATH was set but is not executable: '{path}'"
+        )
 
-    print(
-        "Warning: Could not find Wolfram Kernel in standard locations. "
-        "`wolframclient` will attempt automatic detection."
-    )
-    return None
+    print(f"Using Wolfram Kernel from WOLFRAM_KERNEL_PATH: {path}")
+    return path
 
 
-# Find the kernel path once on startup
-KERNEL_PATH = find_wolfram_kernel()
+# Evaluate once at startup (no searching, just env or None)
+KERNEL_PATH = get_kernel_path_from_env()
 
 
 # --- 工具定义 ---
@@ -101,8 +87,13 @@ def create_mathematica_session() -> str:
     """
     session_id = id_generator.generate()
     try:
-        # 创建一个新的 Wolfram Language 会话, 使用自动检测到的内核路径
-        session = WolframLanguageSession(KERNEL_PATH)
+        # If KERNEL_PATH is provided, force that kernel.
+        # Otherwise, let wolframclient attempt its own autodetection.
+        if KERNEL_PATH:
+            session = WolframLanguageSession(kernel=KERNEL_PATH)
+        else:
+            session = WolframLanguageSession()
+
         sessions[session_id] = session
         return f"Session created successfully. Your session ID is: {session_id}"
     except Exception as e:
@@ -195,10 +186,16 @@ def close_mathematica_session(session_id: str) -> str:
 if __name__ == "__main__":
     # 检查 wolframclient 是否已安装
     try:
-        import wolframclient
+        import wolframclient  # noqa: F401
     except ImportError:
         print("Error: 'wolframclient' is not installed.")
         print("Please install it using: pip install wolframclient")
-        exit(1)
+        raise SystemExit(1)
+
+    if not KERNEL_PATH:
+        print(
+            "Note: WOLFRAM_KERNEL_PATH is not set. "
+            "wolframclient will attempt automatic kernel detection."
+        )
 
     mcp.run(transport="stdio")
